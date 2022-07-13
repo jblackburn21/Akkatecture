@@ -22,77 +22,67 @@
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Threading.Tasks;
 using Akka.Actor;
-using Akka.Cluster;
-using Akka.Configuration;
-using Akkatecture.Clustering.Configuration;
+using Akka.Cluster.Hosting;
+using Akka.Cluster.Sharding;
+using Akka.Hosting;
+using Akka.Remote.Hosting;
+using Akkatecture.Clustering;
 using Akkatecture.Clustering.Core;
 using Akkatecture.Examples.Domain.Model.UserAccount;
+using Microsoft.Extensions.Hosting;
+using Petabridge.Cmd.Cluster;
+using Petabridge.Cmd.Cluster.Sharding;
+using Petabridge.Cmd.Host;
 
-namespace Akkatecture.Examples.Worker
-{
-    public static  class Program
+
+IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices(services =>
     {
-        public static async Task Main(string[] args)
-        {
-            //Get configuration file using Akkatecture's defaults as fallback
-            var path = Environment.CurrentDirectory;
-            var configPath = Path.Combine(path, "worker.conf");
-            var baseConfig = ConfigurationFactory.ParseString(File.ReadAllText(configPath));
-            
-            //specified amount of workers running on their own thread
-            var amountOfWorkers = 1;
+        var actorSystemName = "akkatecture";
 
-            //Create several workers with each worker port will be 6001, 6002,...
-            var actorSystems = new List<ActorSystem>();
-            foreach (var worker in Enumerable.Range(1, amountOfWorkers+1))
-            {
-                //Create worker with port 700X
-                var config = ConfigurationFactory.ParseString($"akka.remote.dot-netty.tcp.port = 700{worker}");
-                config = config
-                    .WithFallback(baseConfig)
-                    .WithFallback(AkkatectureClusteringDefaultSettings.DefaultConfig());
-                var clustername = config.GetString("akka.cluster.name");
-                var actorSystem = ActorSystem.Create(clustername, config);
-                actorSystems.Add(actorSystem);
-                
-                
-                Cluster.Get(actorSystem).RegisterOnMemberUp(() =>
+        services.AddAkka(actorSystemName, (builder, sp) =>
+        {
+            builder
+                .WithRemoting("localhost", 7001)
+                .WithClustering(new ClusterOptions()
                 {
-                    //Start the aggregate cluster when the actorsystem is part of a cluster.
-                    //all requests being proxied to this cluster will be sent here to be processed.
-                    StartUserAccountCluster(actorSystem);
-                });
-            }
+                    Roles = new[] { "worker" },
+                    SeedNodes = new[] { Address.Parse($"akka.tcp://{actorSystemName}@localhost:7000") }
+                })
+                .AddHoconFile("worker.conf")
+                // Enable host for https://cmd.petabridge.com
+                .AddPetabridgeCmd(cmd =>
+                {
+                    cmd.RegisterCommandPalette(ClusterCommands.Instance);
+                    cmd.RegisterCommandPalette(ClusterShardingCommands.Instance);
+                })
+                .WithShardRegion<ShardRegion<UserAccountAggregateManager, UserAccountAggregate, UserAccountId>>(
+                    nameof(UserAccountAggregateManager),
+                    _ => Props.Create(() => new ClusterParentProxy(Props.Create<UserAccountAggregateManager>(), true)),
+                    new MessageExtractor<UserAccountAggregate, UserAccountId>(12),
+                    new ShardOptions
+                    {
+                        Role = "worker",
+                        // Doc: https://getakka.net/api/Akka.Cluster.Sharding.ClusterShardingSettings.html#Akka_Cluster_Sharding_ClusterShardingSettings_RememberEntities
+                        RememberEntities = true,
+                        StateStoreMode = StateStoreMode.DData
+                    });
+            // TODO: Implement this in Akkatecture.Cluster.Hosting
+            // .WithActors((actorSystem, registry) =>
+            // {
+            //     ClusterFactory<UserAccountAggregateManager, UserAccountAggregate, UserAccountId>
+            //         .StartClusteredAggregate(actorSystem);
+            // });
+        });
+    })
+    .Build();
 
-            Console.WriteLine("Akkatecture.Examples.Workers Running");
+Console.WriteLine("Akkatecture.Examples.Workers Running");
 
-            var quit = false;
-            
-            while (!quit)
-            {
-                Console.Write("\rPress Q to Quit.         ");
-                var key = Console.ReadLine();
-                quit = key?.ToUpper() == "Q";
-            }
+await host.RunAsync();
 
-            //Shut down all the local actor systems
-            foreach (var actorsystem in actorSystems)
-            {
-                await actorsystem.Terminate();
-            }
-            Console.WriteLine("Akkatecture.Examples.Workers Exiting.");
-        }
+Console.WriteLine("Akkatecture.Examples.Workers Exiting.");
 
-        public static void StartUserAccountCluster(ActorSystem actorSystem)
-        {
-            ClusterFactory<UserAccountAggregateManager, UserAccountAggregate, UserAccountId>
-                .StartClusteredAggregate(actorSystem);
-        }
-        
-    }
-}
+
+public record ShardRegion<TAggregateManager, TAggregate, TId>();

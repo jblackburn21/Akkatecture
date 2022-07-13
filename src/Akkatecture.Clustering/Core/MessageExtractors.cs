@@ -46,14 +46,13 @@ namespace Akkatecture.Clustering.Core
 
         public override string EntityId(object message)
         {
-            if (message is null)
-                throw new ArgumentNullException(nameof(message));
+            switch(message)
+            {
+                case IDomainEvent e: return SagaLocator.LocateSaga(e).Value;
+                case ShardRegion.StartEntity start: return start.EntityId; // TODO: Needed for remember entities, but need to verify what to return
+            }
 
-
-            if (message is IDomainEvent domainEvent)
-                return SagaLocator.LocateSaga(domainEvent).Value;
-
-            throw new ArgumentException(nameof(message));
+            return null;
         }
     }
     public class MessageExtractor<TAggregate, TIdentity> : HashCodeMessageExtractor
@@ -67,13 +66,29 @@ namespace Akkatecture.Clustering.Core
 
         public override string EntityId(object message)
         {
-            if (message is null)
-                throw new ArgumentNullException(nameof(message));
+            switch(message)
+            {
+                case ICommand<TAggregate, TIdentity> cmd: return cmd.AggregateId.Value;
+                case ShardRegion.StartEntity start: return start.EntityId; // TODO: Needed for remember entities, but need to verify what to return
+            }
 
-            if (message is ICommand<TAggregate, TIdentity> command)
-                return command.AggregateId.Value;
-
-            throw new ArgumentException(nameof(message));
+            return null;
         }
     }
 }
+
+
+// public sealed class MessageExtractor : HashCodeMessageExtractor
+// {
+//     public MessageExtractor() : base(maxNumberOfShards: 100) { }
+//
+//     public string EntityId(object message) 
+//     {
+//         switch(message)
+//         {
+//             case ShardEnvelope e: return e.EntityId;
+//             case ShardRegion.StartEntity start: return start.EntityId;
+//         }
+//     } 
+//     public object EntityMessage(object message) => (message as ShardEnvelope)?.Message ?? message;
+// }

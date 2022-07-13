@@ -12,6 +12,8 @@ The worker is where all the real computation is done. The worker is responsible 
 
 ## Akkatecture.Examples.Seed
 
+TODO: Use lighthouse
+
 The seed or seed node is only responsible for akka service discovery. Its only purpose is to exist at a well known location so that nodes within the actor system can effectively discover each other through the seed node. It is important that the seed does no work that can potentially disrupt its service level. In this sample the seeds address is 127.0.0.1:6000, the 10 workers are addressed from 127.0.0.1:6001-6011, and the console client is on 127.0.0.6100.
 
 ### Description

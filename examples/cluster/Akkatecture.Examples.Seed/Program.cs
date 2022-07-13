@@ -21,45 +21,77 @@
 // IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 // CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
+// using System;
+// using System.IO;
+// using System.Threading.Tasks;
+// using Akka.Actor;
+// using Akka.Configuration;
+// using Akkatecture.Clustering.Configuration;
+
 using System;
-using System.IO;
-using System.Threading.Tasks;
 using Akka.Actor;
-using Akka.Configuration;
-using Akkatecture.Clustering.Configuration;
+using Akka.Cluster.Hosting;
+using Akka.Hosting;
+using Akka.Remote.Hosting;
+using Microsoft.Extensions.Hosting;
 
-namespace Akkatecture.Examples.Seed
-{
-    public static class Program
-    {
-        public static async Task Main(string[] args)
+IHost host = Host.CreateDefaultBuilder(args)
+    .ConfigureServices(services =>
         {
-            //Get configuration file using Akkatecture's defaults as fallback
-            var path = Environment.CurrentDirectory;
-            var configPath = Path.Combine(path, "seed.conf"); 
-            var config = ConfigurationFactory.ParseString(File.ReadAllText(configPath))
-                .WithFallback(AkkatectureClusteringDefaultSettings.DefaultConfig());
-            var clustername = config.GetString("akka.cluster.name");
+            var actorSystemName = "akkatecture";
 
-            //Create actor system
-            var actorSystem = ActorSystem.Create(clustername, config);
-
-            Console.WriteLine("Akkatecture.Examples.Seed Running");
-            
-            var quit = false;
-
-            while (!quit)
+            services.AddAkka(actorSystemName, (builder, sp) =>
             {
-                Console.Write("\rPress Q to Quit.         ");
-                var key = Console.ReadLine();
-                quit = key?.ToUpper() == "Q";
-            }
+                builder
+                    .WithRemoting("localhost", 7000)
+                    .WithClustering(new ClusterOptions()
+                    {
+                        Roles = new[] { "seed" },
+                        SeedNodes = new[] { Address.Parse($"akka.tcp://{actorSystemName}@localhost:7000") }
+                    })
+                    .AddHoconFile("seed.conf");
+            });
+        })
+        .Build();
 
-            //Shut down the local actor system
-            await actorSystem.Terminate();
-            Console.WriteLine("Akkatecture.Examples.Seed Exiting.");
-        }
-    }
-    
-    
-}
+Console.WriteLine("Akkatecture.Examples.Seed Running");
+
+await host.RunAsync();
+
+Console.WriteLine("Akkatecture.Examples.Seed Exiting.");
+
+// namespace Akkatecture.Examples.Seed
+// {
+//     public static class Program
+//     {
+//         public static async Task Main(string[] args)
+//         {
+//             //Get configuration file using Akkatecture's defaults as fallback
+//             var path = Environment.CurrentDirectory;
+//             var configPath = Path.Combine(path, "seed.conf"); 
+//             var config = ConfigurationFactory.ParseString(File.ReadAllText(configPath))
+//                 .WithFallback(AkkatectureClusteringDefaultSettings.DefaultConfig());
+//             var clustername = config.GetString("akka.cluster.name");
+//
+//             //Create actor system
+//             var actorSystem = ActorSystem.Create(clustername, config);
+//
+//             Console.WriteLine("Akkatecture.Examples.Seed Running");
+//             
+//             var quit = false;
+//
+//             while (!quit)
+//             {
+//                 Console.Write("\rPress Q to Quit.         ");
+//                 var key = Console.ReadLine();
+//                 quit = key?.ToUpper() == "Q";
+//             }
+//
+//             //Shut down the local actor system
+//             await actorSystem.Terminate();
+//             Console.WriteLine("Akkatecture.Examples.Seed Exiting.");
+//         }
+//     }
+//     
+//     
+// }
